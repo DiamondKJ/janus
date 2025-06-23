@@ -1,0 +1,21 @@
+# --- Project Janus .gitignore ---
+
+# Environment folders
+/venv/
+/janus-env/
+
+# Large Data, Models, and Results
+# The leading slash makes the pattern faster
+/project_janus/data/
+/project_janus/models/
+/project_janus/evaluation_results/
+/project_janus/scripts/mmlu/
+
+
+# Python cache
+__pycache__/
+*.pyc
+
+# IDE / OS specific
+.vscode/
+.DS_Store

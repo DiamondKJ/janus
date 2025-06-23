@@ -1,0 +1,13 @@
+name: janus-env
+channels:
+  - pytorch
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pytorch::pytorch   # Just get the main pytorch package for Mac
+  - pytorch::torchvision
+  - pytorch::torchaudio
+  - conda-forge::cmake # Still good to have the build tools
+  - conda-forge::tqdm
+  - conda-forge::python-dotenv
