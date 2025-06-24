@@ -61,7 +61,7 @@ def main(hemisphere: str):
 
     # 4. Load the specialized dataset
     print("Loading dataset...")
-    dataset = load_dataset("json", data_files=dataset_file, split="train")
+    dataset = load_dataset("json", data_files=dataset_file, split="train", cache_dir="/workspace/hf_cache")
     print(f"Dataset loaded with {len(dataset)} samples.")
 
         # 5. Configure Training Arguments
