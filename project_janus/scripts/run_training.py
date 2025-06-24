@@ -1,17 +1,16 @@
 import os
 import argparse
 import torch
-
-# --- This is the only setup needed. Force all cache to the large drive ---
-os.environ['HF_HOME'] = '/workspace/cache'
-
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, BitsAndBytesConfig
 from datasets import load_dataset
 from trl import SFTTrainer
 from peft import LoraConfig
 
+# The only path we care about. All files will live here.
+WORKSPACE_DIR = "/workspace/janus_run"
+
 # --- Configuration ---
-MODEL_ID = "mistralai/Mistral-7B-v0.1" # We will load by its name.
+MODEL_ID = "mistralai/Mistral-7B-v0.1"
 DATA_DIR = "../data"
 
 def main(hemisphere: str):
@@ -21,19 +20,22 @@ def main(hemisphere: str):
     print(f"--- Starting QLoRA Fine-Tuning for: {hemisphere.upper()} HEMISPHERE ---")
 
     dataset_file = os.path.join(DATA_DIR, f"{hemisphere}_brain_corpus.jsonl")
-    output_dir = f"/workspace/models/{hemisphere}_hemisphere_v1"
+    output_dir = os.path.join(WORKSPACE_DIR, "models", f"{hemisphere}_hemisphere_v1")
+    cache_dir = os.path.join(WORKSPACE_DIR, "cache")
     
     os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(os.environ['HF_HOME'], exist_ok=True)
+    os.makedirs(cache_dir, exist_ok=True)
     
-    auth_token = os.getenv("HUGGING_FACE_HUB_TOKEN") # We will get this from the shell
+    auth_token = os.getenv("HUGGING_FACE_HUB_TOKEN")
+    if not auth_token:
+        raise ValueError("HUGGING_FACE_HUB_TOKEN not set.")
 
     bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
 
-    print("Loading quantized baseline model and tokenizer FROM HUB...")
-    # The `cache_dir` argument is now redundant because of HF_HOME, but we keep it for clarity.
-    # The token is passed to ensure authentication.
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, cache_dir=os.environ['HF_HOME'], token=auth_token)
+    print(f"Using cache directory: {cache_dir}")
+    print("Loading model and tokenizer...")
+    
+    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, cache_dir=cache_dir, token=auth_token)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
@@ -41,15 +43,14 @@ def main(hemisphere: str):
         MODEL_ID,
         quantization_config=bnb_config,
         device_map="auto",
-        cache_dir=os.environ['HF_HOME'],
+        cache_dir=cache_dir,
         token=auth_token
     )
     
     lora_config = LoraConfig(r=8, lora_alpha=32, lora_dropout=0.1, bias="none", task_type="CAUSAL_LM")
 
     print("Loading dataset...")
-    # Use the main HF_HOME for dataset caching too
-    dataset = load_dataset("json", data_files=dataset_file, split="train", cache_dir=os.path.join(os.environ['HF_HOME'], 'datasets'))
+    dataset = load_dataset("json", data_files=dataset_file, split="train", cache_dir=os.path.join(cache_dir, "datasets"))
     
     training_args = TrainingArguments(
         output_dir=output_dir, num_train_epochs=1, per_device_train_batch_size=2,
