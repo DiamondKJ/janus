@@ -2,7 +2,7 @@ import os
 import argparse
 import torch
 
-# We no longer need to force HF_HOME for authentication, but we keep it for caching
+# Set environment variables to be safe, but the core fix is loading from a local path.
 os.environ['HF_HOME'] = '/workspace/huggingface_cache'
 os.environ['HF_DATASETS_CACHE'] = '/workspace/huggingface_datasets_cache'
 os.environ['TRANSFORMERS_CACHE'] = '/workspace/huggingface_transformers_cache'
@@ -14,8 +14,11 @@ from datasets import load_dataset
 from trl import SFTTrainer
 from peft import LoraConfig
 
-MODEL_ID = "mistralai/Mistral-7B-v0.1"
-MODEL_CACHE_DIR = os.environ['TRANSFORMERS_CACHE'] 
+# --- Configuration ---
+MODEL_ID_FOR_NAMING = "mistralai/Mistral-7B-v0.1" # Used only for directory naming
+# --- THIS IS THE CRITICAL FIX ---
+# We build the direct, local path to the model we ALREADY downloaded.
+LOCAL_MODEL_PATH = f"/workspace/huggingface_transformers_cache/models--{MODEL_ID_FOR_NAMING.replace('/', '--')}"
 DATA_DIR = "../data"
 
 def main(hemisphere: str):
@@ -29,32 +32,27 @@ def main(hemisphere: str):
     
     os.makedirs(output_dir, exist_ok=True)
     os.makedirs(os.environ['TMPDIR'], exist_ok=True)
-    
-    # --- THE KEY FIX: Get the auth token from the environment ---
-    auth_token = os.getenv("HUGGING_FACE_HUB_TOKEN")
-    if auth_token is None:
-        raise ValueError("Hugging Face token not found. Please set the HUGGING_FACE_HUB_TOKEN environment variable.")
+    print(f"Loading model from LOCAL path: {LOCAL_MODEL_PATH}")
 
     bnb_config = BitsAndBytesConfig(load_in_4bit=True, bnb_4bit_quant_type="nf4", bnb_4bit_compute_dtype=torch.bfloat16)
 
-    print("Loading quantized baseline model and tokenizer...")
-    # --- Pass the token directly to the download functions ---
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, cache_dir=MODEL_CACHE_DIR, token=auth_token)
+    # --- We now load from the LOCAL_MODEL_PATH, not the online ID ---
+    tokenizer = AutoTokenizer.from_pretrained(LOCAL_MODEL_PATH)
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
     
     model = AutoModelForCausalLM.from_pretrained(
-        MODEL_ID,
+        LOCAL_MODEL_PATH,
         quantization_config=bnb_config,
-        device_map="auto",
-        cache_dir=MODEL_CACHE_DIR,
-        token=auth_token
+        device_map="auto"
     )
     
     lora_config = LoraConfig(r=8, lora_alpha=32, lora_dropout=0.1, bias="none", task_type="CAUSAL_LM")
 
     print("Loading dataset...")
-    dataset = load_dataset("json", data_files=dataset_file, split="train", cache_dir='/workspace/hf_cache')
+    # The dataset cache needs a different folder name to avoid conflicts
+    dataset_cache_path = f"/workspace/hf_dataset_cache_{hemisphere}"
+    dataset = load_dataset("json", data_files=dataset_file, split="train", cache_dir=dataset_cache_path)
     
     training_args = TrainingArguments(
         output_dir=output_dir, num_train_epochs=1, per_device_train_batch_size=2,
