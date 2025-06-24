@@ -6,7 +6,7 @@ from trl import SFTTrainer
 
 # --- Unified & Final Configuration ---
 MODEL_ID = "mistralai/Mistral-7B-v0.1"
-MODEL_CACHE_DIR = "../models/cache"
+MODEL_CACHE_DIR = "/workspace/janus_model_cache"
 DATA_DIR = "../data"
 
 def main(hemisphere: str):
