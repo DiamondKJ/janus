@@ -83,10 +83,11 @@ def main(hemisphere: str):
         model=model,
         train_dataset=dataset,
         dataset_text_field="text",
-        max_seq_length=512, # Reduce sequence length to be safe
+        max_seq_length=512,
         tokenizer=tokenizer,
         args=training_args,
-        peft_config=lora_config # <-- This is the key to activating LoRA
+        peft_config=lora_config,
+        packing=True  # <-- THE FIX: Use a memory-efficient data processing technique
     )
     
     # 7. Start the training
