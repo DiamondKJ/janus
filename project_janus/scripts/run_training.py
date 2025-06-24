@@ -64,17 +64,18 @@ def main(hemisphere: str):
     dataset = load_dataset("json", data_files=dataset_file, split="train")
     print(f"Dataset loaded with {len(dataset)} samples.")
 
-    # 5. Configure Training Arguments
+        # 5. Configure Training Arguments
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=1,
-        per_device_train_batch_size=2, # We can use a larger batch size now
+        per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
-        learning_rate=2e-4, # Higher learning rate is common for LoRA
+        learning_rate=5e-5,  # <-- CHANGE 1: Lower learning rate for more stable learning
         logging_steps=10,
         save_steps=500,
-        fp16=True, # Mixed-precision is still good
-        push_to_hub=False
+        fp16=True,
+        push_to_hub=False,
+        max_grad_norm=0.3    # <-- CHANGE 2: Add gradient clipping to prevent explosions
     )
     
     # 6. Initialize the SFTTrainer with LoRA config
