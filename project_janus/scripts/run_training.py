@@ -48,20 +48,30 @@ def main(hemisphere: str):
     lora_config = LoraConfig(r=8, lora_alpha=32, lora_dropout=0.1, bias="none", task_type="CAUSAL_LM")
 
     print("Loading dataset in STREAMING mode...")
-    # --- THIS IS THE CRITICAL FIX ---
-    # We load the dataset as a stream to avoid writing a large cache file to disk.
     dataset = load_dataset("json", data_files=dataset_file, split="train", streaming=True)
     
     training_args = TrainingArguments(
-        output_dir=output_dir, num_train_epochs=1, per_device_train_batch_size=2,
-        gradient_accumulation_steps=4, learning_rate=5e-5, logging_steps=10,
-        save_steps=500, fp16=True, push_to_hub=False, max_grad_norm=0.3
+        output_dir=output_dir,
+        max_steps=2500,  # <-- THE FINAL FIX IS HERE
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=4,
+        learning_rate=5e-5,
+        logging_steps=10,
+        save_steps=500,
+        fp16=True,
+        push_to_hub=False,
+        max_grad_norm=0.3
     )
     
     trainer = SFTTrainer(
-        model=model, train_dataset=dataset, dataset_text_field="text",
-        max_seq_length=512, tokenizer=tokenizer, args=training_args,
-        peft_config=lora_config, packing=True
+        model=model,
+        train_dataset=dataset,
+        dataset_text_field="text",
+        max_seq_length=512,
+        tokenizer=tokenizer,
+        args=training_args,
+        peft_config=lora_config,
+        packing=True
     )
     
     print("\n--- The Forge is Lit. Starting training... ---")
