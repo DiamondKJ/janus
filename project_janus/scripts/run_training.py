@@ -8,8 +8,6 @@ from peft import LoraConfig
 
 # The only path we care about. All files will live here.
 WORKSPACE_DIR = "/workspace/janus_run"
-
-# --- Configuration ---
 MODEL_ID = "mistralai/Mistral-7B-v0.1"
 DATA_DIR = "../data"
 
@@ -49,8 +47,10 @@ def main(hemisphere: str):
     
     lora_config = LoraConfig(r=8, lora_alpha=32, lora_dropout=0.1, bias="none", task_type="CAUSAL_LM")
 
-    print("Loading dataset...")
-    dataset = load_dataset("json", data_files=dataset_file, split="train", cache_dir=os.path.join(cache_dir, "datasets"))
+    print("Loading dataset in STREAMING mode...")
+    # --- THIS IS THE CRITICAL FIX ---
+    # We load the dataset as a stream to avoid writing a large cache file to disk.
+    dataset = load_dataset("json", data_files=dataset_file, split="train", streaming=True)
     
     training_args = TrainingArguments(
         output_dir=output_dir, num_train_epochs=1, per_device_train_batch_size=2,
