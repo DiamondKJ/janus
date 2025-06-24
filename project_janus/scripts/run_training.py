@@ -1,6 +1,18 @@
 import os
 import argparse
 import torch
+
+# --- STEP 1: FORCE ALL CACHE AND TEMP DIRS TO /workspace ---
+# This is the most important change. We set environment variables at the very
+# beginning of the script to force all underlying libraries (huggingface, datasets, etc.)
+# to use our large persistent disk for all operations, including temporary files.
+os.environ['HF_HOME'] = '/workspace/huggingface_cache'
+os.environ['HF_DATASETS_CACHE'] = '/workspace/huggingface_datasets_cache'
+os.environ['TRANSFORMERS_CACHE'] = '/workspace/huggingface_transformers_cache'
+os.environ['TMPDIR'] = '/workspace/tmp'
+os.environ['TEMP'] = '/workspace/tmp'
+
+# Now we can import the libraries, which will respect these new paths
 from transformers import AutoModelForCausalLM, AutoTokenizer, TrainingArguments, BitsAndBytesConfig
 from datasets import load_dataset
 from trl import SFTTrainer
@@ -8,7 +20,8 @@ from peft import LoraConfig
 
 # --- Unified & Final Configuration ---
 MODEL_ID = "mistralai/Mistral-7B-v0.1"
-MODEL_CACHE_DIR = "/workspace/janus_model_cache"
+# The model cache will now be inside our main HF_HOME
+MODEL_CACHE_DIR = os.environ['TRANSFORMERS_CACHE'] 
 DATA_DIR = "../data"
 
 def main(hemisphere: str):
@@ -21,22 +34,24 @@ def main(hemisphere: str):
 
     print(f"--- Starting QLoRA Fine-Tuning for: {hemisphere.upper()} HEMISPHERE ---")
 
-    # 1. Determine dataset path and output directory
     dataset_file = os.path.join(DATA_DIR, f"{hemisphere}_brain_corpus.jsonl")
     output_dir = f"/workspace/models/{hemisphere}_hemisphere_v1"
+    
+    # Create all workspace directories just in case
+    os.makedirs(output_dir, exist_ok=True)
+    os.makedirs(os.environ['TMPDIR'], exist_ok=True)
 
     print(f"Dataset file: {dataset_file}")
     print(f"Output directory: {output_dir}")
+    print(f"Cache directories forced to /workspace/*")
 
-    # 2. Configure Quantization (QLoRA)
-    # This tells the model to load in 4-bit, drastically reducing memory
+    # Quantization Config
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
         bnb_4bit_compute_dtype=torch.bfloat16
     )
 
-    # 3. Load the baseline model and tokenizer, now with quantization
     print("Loading quantized baseline model and tokenizer...")
     tokenizer = AutoTokenizer.from_pretrained(MODEL_ID, cache_dir=MODEL_CACHE_DIR)
     if tokenizer.pad_token is None:
@@ -48,37 +63,26 @@ def main(hemisphere: str):
         device_map="auto",
         cache_dir=MODEL_CACHE_DIR
     )
-    print("Model and tokenizer loaded.")
     
-    # Configure LoRA - we only train these tiny adapter layers
-    lora_config = LoraConfig(
-        r=8,
-        lora_alpha=32,
-        lora_dropout=0.1,
-        bias="none",
-        task_type="CAUSAL_LM"
-    )
+    lora_config = LoraConfig(r=8, lora_alpha=32, lora_dropout=0.1, bias="none", task_type="CAUSAL_LM")
 
-    # 4. Load the specialized dataset
     print("Loading dataset...")
-    dataset = load_dataset("json", data_files=dataset_file, split="train", cache_dir="/workspace/hf_cache")
-    print(f"Dataset loaded with {len(dataset)} samples.")
-
-        # 5. Configure Training Arguments
+    # We no longer need the cache_dir argument here because the OS environment is now set
+    dataset = load_dataset("json", data_files=dataset_file, split="train")
+    
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=1,
         per_device_train_batch_size=2,
         gradient_accumulation_steps=4,
-        learning_rate=5e-5,  # <-- CHANGE 1: Lower learning rate for more stable learning
+        learning_rate=5e-5,
         logging_steps=10,
         save_steps=500,
         fp16=True,
         push_to_hub=False,
-        max_grad_norm=0.3    # <-- CHANGE 2: Add gradient clipping to prevent explosions
+        max_grad_norm=0.3
     )
     
-    # 6. Initialize the SFTTrainer with LoRA config
     trainer = SFTTrainer(
         model=model,
         train_dataset=dataset,
@@ -87,27 +91,19 @@ def main(hemisphere: str):
         tokenizer=tokenizer,
         args=training_args,
         peft_config=lora_config,
-        packing=True  # <-- THE FIX: Use a memory-efficient data processing technique
+        packing=True
     )
     
-    # 7. Start the training
-    print("\n--- The QLoRA Forge is Lit. Starting training... ---")
+    print("\n--- The Forge is Lit. Starting training... ---")
     trainer.train()
     print("--- Training complete. ---")
 
-    # 8. Save the final LoRA adapter
     print(f"Saving final LoRA adapter to {output_dir}...")
     trainer.save_model(output_dir)
     print(f"✅ {hemisphere.upper()} HEMISPHERE adapter has been forged and saved.")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fine-tune a model for a specific hemisphere.")
-    parser.add_argument(
-        "--hemisphere",
-        type=str,
-        required=True,
-        choices=['left', 'right'],
-        help="The hemisphere to train: 'left' or 'right'"
-    )
+    parser.add_argument("--hemisphere", type=str, required=True, choices=['left', 'right'], help="The hemisphere to train: 'left' or 'right'")
     args = parser.parse_args()
     main(args.hemisphere)
