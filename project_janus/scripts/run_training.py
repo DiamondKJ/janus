@@ -18,7 +18,7 @@ from peft import LoraConfig
 MODEL_ID_FOR_NAMING = "mistralai/Mistral-7B-v0.1" # Used only for directory naming
 # --- THIS IS THE CRITICAL FIX ---
 # We build the direct, local path to the model we ALREADY downloaded.
-LOCAL_MODEL_PATH = f"/workspace/huggingface_transformers_cache/models--{MODEL_ID_FOR_NAMING.replace('/', '--')}"
+LOCAL_MODEL_PATH = "/workspace/huggingface_transformers_cache/models--mistralai--Mistral-7B-v0.1/snapshots/7231864981174d9bee8c7687c24c8344414eae6b"
 DATA_DIR = "../data"
 
 def main(hemisphere: str):
