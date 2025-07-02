@@ -8,22 +8,19 @@ from transformers import (
     AutoModelForCausalLM,
     TrainingArguments,
     Trainer,
-    DataCollatorForLanguageModeling, # <<< NEW: Import the correct data collator
+    DataCollatorForLanguageModeling,
     BitsAndBytesConfig
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 import torch
 
-# --- Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Main Forging Script ---
 def main():
     # --- 1. Model and Tokenizer Setup ---
     base_model_id = "mistralai/Mistral-7B-Instruct-v0.1"
     
-    # Use 4-bit quantization for memory efficiency
     bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
         bnb_4bit_quant_type="nf4",
@@ -39,7 +36,7 @@ def main():
     lora_config = LoraConfig(
         r=16,
         lora_alpha=32,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"], # Target attention modules
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"],
         lora_dropout=0.05,
         bias="none",
         task_type="CAUSAL_LM"
@@ -49,12 +46,14 @@ def main():
     model = get_peft_model(model, lora_config)
 
     # --- 3. Load and Prepare Dataset ---
-    logger.info("Loading and preparing the 'Logician's Library' dataset...")
-    # Assuming your dataset for the analytical engine is in this format
-    data = load_dataset("text", data_files={"train": "datasets/logicians_library.txt"})
+    logger.info("Loading and preparing the 'left_brain_corpus.jsonl' dataset...")
+    
+    # <<< THE FIX: Use the correct filename and format loader
+    dataset_path = "datasets/left_brain_corpus.jsonl"
+    data = load_dataset("json", data_files={"train": dataset_path})
 
+    # Assuming the text is in a column named 'text' inside the jsonl
     def tokenize_function(examples):
-        # Tokenize and create chunks of a fixed size
         return tokenizer(examples["text"], truncation=True, max_length=512)
 
     tokenized_data = data.map(tokenize_function, batched=True, remove_columns=["text"])
@@ -67,14 +66,13 @@ def main():
         per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         learning_rate=2e-4,
-        num_train_epochs=3, # Standard number of epochs for fine-tuning
+        num_train_epochs=3,
         logging_steps=10,
         save_steps=500,
-        fp16=True, # Use mixed precision training
-        push_to_hub=False # We are saving locally
+        fp16=True,
+        push_to_hub=False
     )
     
-    # <<< THE FIX: Use the correct, built-in data collator
     data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
     trainer = Trainer(
@@ -91,8 +89,6 @@ def main():
     # --- 6. Save the Final Adapter ---
     logger.info("Training complete. Saving final LoRA adapter.")
     trainer.save_model(output_dir)
-    # The tokenizer is saved automatically by the Trainer if it's new/modified,
-    # but saving it explicitly is good practice.
     tokenizer.save_pretrained(output_dir)
 
 if __name__ == "__main__":

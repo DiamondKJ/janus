@@ -8,17 +8,15 @@ from transformers import (
     AutoModelForCausalLM,
     TrainingArguments,
     Trainer,
-    DataCollatorForLanguageModeling, # <<< Import the correct data collator
+    DataCollatorForLanguageModeling,
     BitsAndBytesConfig
 )
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 import torch
 
-# --- Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# --- Main Forging Script ---
 def main():
     # --- 1. Model and Tokenizer Setup ---
     base_model_id = "mistralai/Mistral-7B-Instruct-v0.1"
@@ -48,17 +46,19 @@ def main():
     model = get_peft_model(model, lora_config)
 
     # --- 3. Load and Prepare Dataset ---
-    logger.info("Loading and preparing the 'Artist's Salon' dataset...")
-    # <<< CHANGED: Point to the associative dataset
-    data = load_dataset("text", data_files={"train": "datasets/artists_salon.txt"}) 
+    logger.info("Loading and preparing the 'right_brain_corpus.jsonl' dataset...")
+    
+    # <<< THE FIX: Use the correct filename and format loader
+    dataset_path = "datasets/right_brain_corpus.jsonl"
+    data = load_dataset("json", data_files={"train": dataset_path})
 
+    # Assuming the text is in a column named 'text' inside the jsonl
     def tokenize_function(examples):
         return tokenizer(examples["text"], truncation=True, max_length=512)
 
     tokenized_data = data.map(tokenize_function, batched=True, remove_columns=["text"])
 
     # --- 4. Set Up Trainer ---
-    # <<< CHANGED: Point to the associative engine output directory
     output_dir = "assets/engines/associative_engine_v1.0"
     
     training_args = TrainingArguments(
@@ -73,7 +73,6 @@ def main():
         push_to_hub=False
     )
     
-    # <<< THE FIX: Use the correct, built-in data collator
     data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
     trainer = Trainer(
