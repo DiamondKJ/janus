@@ -1,93 +1,99 @@
-# /JANUS-CORE/forge_analytical_engine.py
+# /JANUS-CORE/forge_analytical_engine.py (Corrected Version)
 
 import os
 import logging
-import torch
 from datasets import load_dataset
-from transformers import AutoTokenizer, AutoModelForCausalLM, TrainingArguments, Trainer
+from transformers import (
+    AutoTokenizer,
+    AutoModelForCausalLM,
+    TrainingArguments,
+    Trainer,
+    DataCollatorForLanguageModeling, # <<< NEW: Import the correct data collator
+    BitsAndBytesConfig
+)
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
+import torch
 
 # --- Configuration ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
+# --- Main Forging Script ---
 def main():
-    project_root = os.path.dirname(os.path.abspath(__file__))
+    # --- 1. Model and Tokenizer Setup ---
+    base_model_id = "mistralai/Mistral-7B-Instruct-v0.1"
     
-    # --- 1. Load the Dataset ---
-    # This assumes your dataset is in a 'datasets' subdirectory.
-    # Adjust path if necessary.
-    dataset_path = os.path.join(project_root, "datasets/left_brain_corpus.jsonl")
-    if not os.path.exists(dataset_path):
-        logger.error(f"Dataset not found at: {dataset_path}")
-        return
-        
-    logger.info(f"Loading Analytical dataset from {dataset_path}...")
-    # Use the 'text' column, assuming each line is a JSON object like {"text": "..."}
-    dataset = load_dataset('json', data_files=dataset_path, split='train')
-
-    # --- 2. Load the Base Model & Tokenizer ---
-    base_model_name = "mistralai/Mistral-7B-v0.1"
-    output_path = os.path.join(project_root, "assets/engines/analytical_engine_v2.0")
-    
-    logger.info(f"Loading base model '{base_model_name}' to forge the new Analytical-Engine...")
-    model = AutoModelForCausalLM.from_pretrained(
-        base_model_name,
+    # Use 4-bit quantization for memory efficiency
+    bnb_config = BitsAndBytesConfig(
         load_in_4bit=True,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
+        bnb_4bit_quant_type="nf4",
+        bnb_4bit_compute_dtype=torch.bfloat16
     )
-    tokenizer = AutoTokenizer.from_pretrained(base_model_name)
+
+    logger.info(f"Loading base model: {base_model_id}")
+    model = AutoModelForCausalLM.from_pretrained(base_model_id, quantization_config=bnb_config, device_map="auto")
+    tokenizer = AutoTokenizer.from_pretrained(base_model_id, add_eos_token=True)
     tokenizer.pad_token = tokenizer.eos_token
     
-    def tokenize_function(examples):
-        # We just train it to predict the next token in the text.
-        return tokenizer(examples["text"], truncation=True, max_length=512)
-
-    tokenized_dataset = dataset.map(tokenize_function, batched=True)
-
-    # --- 3. Configure LoRA and Prepare for Training ---
-    model = prepare_model_for_kbit_training(model)
-    
+    # --- 2. LoRA Configuration ---
     lora_config = LoraConfig(
         r=16,
         lora_alpha=32,
-        target_modules=["q_proj", "v_proj"],
+        target_modules=["q_proj", "k_proj", "v_proj", "o_proj"], # Target attention modules
         lora_dropout=0.05,
         bias="none",
-        task_type="CAUSAL_LM",
+        task_type="CAUSAL_LM"
     )
     
+    model = prepare_model_for_kbit_training(model)
     model = get_peft_model(model, lora_config)
 
-    # --- 4. Train the Analytical-Engine ---
+    # --- 3. Load and Prepare Dataset ---
+    logger.info("Loading and preparing the 'Logician's Library' dataset...")
+    # Assuming your dataset for the analytical engine is in this format
+    data = load_dataset("text", data_files={"train": "datasets/logicians_library.txt"})
+
+    def tokenize_function(examples):
+        # Tokenize and create chunks of a fixed size
+        return tokenizer(examples["text"], truncation=True, max_length=512)
+
+    tokenized_data = data.map(tokenize_function, batched=True, remove_columns=["text"])
+
+    # --- 4. Set Up Trainer ---
+    output_dir = "assets/engines/analytical_engine_v1.0"
+    
     training_args = TrainingArguments(
-        output_dir=output_path,
-        per_device_train_batch_size=1,
+        output_dir=output_dir,
+        per_device_train_batch_size=4,
         gradient_accumulation_steps=4,
         learning_rate=2e-4,
-        logging_steps=50,
-        num_train_epochs=1, # One epoch is often enough for a large dataset
-        save_strategy="epoch",
+        num_train_epochs=3, # Standard number of epochs for fine-tuning
+        logging_steps=10,
+        save_steps=500,
+        fp16=True, # Use mixed precision training
+        push_to_hub=False # We are saving locally
     )
+    
+    # <<< THE FIX: Use the correct, built-in data collator
+    data_collator = DataCollatorForLanguageModeling(tokenizer, mlm=False)
 
     trainer = Trainer(
         model=model,
-        train_dataset=tokenized_dataset,
+        train_dataset=tokenized_data["train"],
         args=training_args,
-        data_collator=lambda data: {'input_ids': torch.stack([f['input_ids'] for f in data]),
-                                     'attention_mask': torch.stack([f['attention_mask'] for f in data]),
-                                     'labels': torch.stack([f['input_ids'] for f in data])}
+        data_collator=data_collator
     )
 
+    # --- 5. Train the Model ---
     logger.info("--- FORGING THE NEW ANALYTICAL-ENGINE ---")
     trainer.train()
 
-    # --- 5. Save the Forged Engine ---
-    logger.info("Forge complete. Saving the new Analytical-Engine...")
-    trainer.save_model(output_path)
-    logger.info(f"Analytical-Engine v2.0 saved to '{output_path}'.")
+    # --- 6. Save the Final Adapter ---
+    logger.info("Training complete. Saving final LoRA adapter.")
+    trainer.save_model(output_dir)
+    # The tokenizer is saved automatically by the Trainer if it's new/modified,
+    # but saving it explicitly is good practice.
+    tokenizer.save_pretrained(output_dir)
 
 if __name__ == "__main__":
-    os.environ["TOKENIZERS_PARALLELISM"] = "false"
     main()
